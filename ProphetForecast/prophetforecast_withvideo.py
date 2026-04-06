@@ -471,16 +471,19 @@ def create_intro_slide(
         font = ImageFont.load_default()
 
     # 4. HANDLE MANUAL LINE BREAKS + DYNAMIC WRAPPING
-    max_pixel_width = width * 0.75  # Increased padding (25% total gutter)
+    max_pixel_width = width * 0.75 
     final_lines = []
     
-    # Split by your manual triple-quote newlines first
     input_paragraphs = text.strip().split('\n')
 
     for paragraph in input_paragraphs:
         words = paragraph.split()
-        #if not words: continue # Skip empty lines
         
+        # Handle empty lines/manual breaks
+        if not words:
+            final_lines.append("")
+            continue
+            
         current_line = []
         for word in words:
             test_line = ' '.join(current_line + [word])
@@ -490,38 +493,64 @@ def create_intro_slide(
             else:
                 final_lines.append(' '.join(current_line))
                 current_line = [word]
-        final_lines.append(' '.join(current_line))
+        
+        # FIX: Append the remainder of the words
+        if current_line:
+            final_lines.append(' '.join(current_line))
 
-    # 5. VERTICAL CENTERING (WITH SERIF SPACING)
+    # 5. VERTICAL CENTERING (ROBUST CALCULATION)
     sample_bbox = draw.textbbox((0, 0), "Hg", font=font)
     line_h = sample_bbox[3] - sample_bbox[1]
-    spacing = 16 # Generous spacing for a premium look
-    
-    total_text_height = (line_h * len(final_lines)) + (spacing * (len(final_lines) - 1))
-    current_y = (height - total_text_height) // 2
+    standard_spacing = 16 
+    empty_line_gap = 16  # This is your "tiny" space
+
+    total_text_height = 0
+    for i, line in enumerate(final_lines):
+        if line.strip():  # If line has text
+            total_text_height += line_h
+            # Add spacing if there's another line coming (and current isn't last)
+            if i < len(final_lines) - 1:
+                total_text_height += standard_spacing
+        else:  # If line is empty
+            total_text_height += empty_line_gap
+
+    current_y = (height - total_text_height) // 2 - 14
 
     # 6. DRAW
     for line in final_lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        line_w = bbox[2] - bbox[0]
-        draw.text(((width - line_w) // 2, current_y), line, font=font, fill=text_color)
-        current_y += line_h + spacing
+        if line.strip():
+            # Draw the text
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_w = bbox[2] - bbox[0]
+            draw.text(((width - line_w) // 2, current_y), line, font=font, fill=text_color)
+            
+            # Move down by line height + standard spacing
+            current_y += line_h + standard_spacing
+        else:
+            # Move down by ONLY the tiny gap
+            current_y += empty_line_gap
 
     img.save(save_path, "PNG", quality=95)
-    print(f"Success: {save_path} generated with custom breaks.")
+    print(f"Success: {save_path} generated.")
     return save_path
 
+# Test
 text = """
-Latter-day Saint Prophets - Who's next?
+Latter-day Saint Prophet Forecast
+
+Who's next?
 
 10,000 possible paths for the future reveal...
+
+
+  
 """
+
 create_intro_slide(
     text=text,
-    #background_color="#002E5D", # BYU Navy
-    text_color="#3b3a3a",
-    font_path="segoeuib.ttf",   # Georgia Bold
-    font_size=35
+    text_color="#413a66",
+    font_path="segoeuib.ttf", # Ensure this font is installed on your system!
+    font_size=33
 )
 
 #%% new video render
@@ -657,26 +686,34 @@ for _ in range(30 * 4):
 out.release()
 print(f"[{datetime.now().strftime('%H:%M:%S')}] SUCCESS: 'lds_prophets_reel.mp4' created.")
 
-#%% Save a few frames
 
-# --- Define which frames to save ---
-# Example: First frame, middle frame, and last frame
-frames_to_extract = [0, len(frame_files) // 2, len(frame_files) - 1] 
+#%%
+# --- 3. Post-Render Image Export ---
+import os
 
-# STEP C: The Main Animation
+# Create a dedicated folder for the individual stills
+export_folder = 'exported_stills'
+if not os.path.exists(export_folder):
+    os.makedirs(export_folder)
+
+print(f"[{datetime.now().strftime('%H:%M:%S')}] Video closed. Exporting all formatted stills...")
+
+# 1. Export the Special Frames (Intro & Summary)
+# We use the pre-formatted bases (s_base1, s_base2) from Step 2
+cv2.imwrite(os.path.join(export_folder, "00_summary_hook.png"), add_branding(s_base1.copy()))
+cv2.imwrite(os.path.join(export_folder, "01_intro_text.png"), add_branding(s_base2.copy()))
+
+# 2. Export the Main Animation Sequence
 for i, filename in enumerate(frame_files):
+    # Load and process the frame
     img = cv2.imread(filename)
     reel_base = format_for_reel_with_border(img, bg_resized)
     
-    # Apply branding to get the 100% finished frame
-    final_frame_with_branding = add_branding(reel_base.copy())
+    # Apply branding
+    final_still = add_branding(reel_base)
     
-    # Check if the current frame index is one we want to save
-    if i in frames_to_extract:
-        save_path = f"sample_full_frame_{i}.png"
-        cv2.imwrite(save_path, final_frame_with_branding)
-        print(f"Saved sample frame: {save_path}")
+    # Save with a prefix to keep them ordered after the intro
+    save_name = os.path.join(export_folder, f"02_prophet_frame_{i:03d}.png")
+    cv2.imwrite(save_name, final_still)
 
-    # Write each frame to the video
-    for _ in range(1): 
-        out.write(final_frame_with_branding)
+print(f"[{datetime.now().strftime('%H:%M:%S')}] Done! All images saved to '{export_folder}'.")
